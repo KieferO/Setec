@@ -1,5 +1,5 @@
 #!/usr/bin/python
-# -*- coding: us-ascii -*-
+# -*- coding: utf-8 -*-
 
 from __future__ import absolute_import
 from __future__ import division
@@ -8,55 +8,124 @@ from __future__ import unicode_literals
 
 import sys
 import collections
+import os
+import codecs
 
 sys.recursionlimit = 1000
 
 class WL(object):
-    def __init__(self):
+    def __init__(self, flavour=u'callooh'):
         self.symbols = collections.defaultdict(list)
         self.stack = []
         self.scopes = [[]]
-        self.dispatchdi = {'declare': self.declare,
-                           'assign': self.assign,
-                           'call': self.call,
-                           'length': self.length,
-                           'index': self.index,
-                           'catenate': self.catenate,
-                           'append': self.append,
-                           'if': self.if_,
-                           'munch': self.munch,
-                           '+': self.add,
-                           '-': self.sub,
-                           '*': self.mul,
-                           '/': self.div,
-                           '%': self.mod,
-                           '>': self.gt,
-                           '<': self.lt,
-                           '==': self.eq,
-                           'end': self.end,
-                           'begin': self.begin,
-                          }
+        if flavour == u'callooh':
+            self.dispatchdi = {
+                u'plead': self.import_,
+                u'callay': self.declare,
+                u'uff': self.assign,
+                u'mome': self.call,
+                u'frabjion': self.length,
+                u'grend': self.index,
+                u'whiffle': self.catenate,
+                u'gimble': self.append,
+                u'gyre': self.if_,
+                u'munch': self.munch,
+                u'{': u'«',
+                u'}': u'»',
+                u'[]': u'∅',
+                u'oq': u'‹',
+                u'cq': u'›',
+                u'♠': self.add,
+                u'♣': self.sub,
+                u'♥': self.mul,
+                u'♦': self.div,
+                u'☋': self.gt,
+                u'☊': self.lt,
+                u'☁': self.mod,
+                u'☺': self.eq,
+                u'/*': u'☞',
+                u'*/': u'☜',
+                u'end': self.end,
+                u'begin': self.begin
+            }
+            self.parseint = self.parseint14
+            self.isnum = self.isnum14
+        else:
+            self.dispatchdi = {
+                u'import': self.import_,
+                u'declare': self.declare,
+                u'assign': self.assign,
+                u'call': self.call,
+                u'length': self.length,
+                u'index': self.index,
+                u'catenate': self.catenate,
+                u'append': self.append,
+                u'if': self.if_,
+                u'munch': self.munch,
+                u'{': u'{',
+                u'}': u'}',
+                u'[]': u'[]',
+                u'oq': u"'",
+                u'cq': u"'",
+                u'+': self.add,
+                u'-': self.sub,
+                u'*': self.mul,
+                u'/': self.div,
+                u'%': self.mod,
+                u'>': self.gt,
+                u'<': self.lt,
+                u'==': self.eq,
+                u'/*': u'/*',
+                u'*/': u'*/',
+                u'end': self.end,
+                u'begin': self.begin
+            }
+            self.parseint = self.parseint10
+            self.isnum = self.isnum10
+
     def push(self, val):
         self.stack.append(val)
 
     def pop(self):
         return self.stack.pop()
 
+    def isnum10(self, token):
+        return token.isdigit()
+
+    def isnum14(self, token):
+        return set(token) <= set(u'0A23456789TJQK')
+
+    def parseint10(self, token):
+        return int(token)
+
+    def parseint14(self, token):
+        lookup = {u'A': u'1', u'T': u'a', u'J': u'b', u'Q': u'c', u'K': u'd'}
+        return int(u''.join([lookup[c] if c in lookup else c for c in token]),
+                   14)
+
     def read(self, token):
-        if '--debug' in sys.argv:
+        oq = self.dispatchdi[u'oq']
+        cq = self.dispatchdi[u'cq']
+        ocb = self.dispatchdi[u'{']
+        ccb = self.dispatchdi[u'}']
+        if u'--debug' in sys.argv:
             print(self.stack)
-        if token[0] == token[-1] == "'":
-            self.push(token.strip("'"))
-        elif token[0] == '{' and token[-1] == '}':
+        if token[0] == oq and token[-1] == cq:
+            self.push(token.strip(oq + cq))
+        elif token[0] == ocb and token[-1] == ccb:
             self.push(token[2:-2])
-        elif token.isdigit():
-            self.push(int(token))
-        elif token == '[]':
+        elif self.isnum(token):
+            self.push(self.parseint(token))
+        elif token == self.dispatchdi[u'[]']:
             self.push([])
         elif token in self.dispatchdi:
             self.dispatchdi[token]()
         else:
-            self.push(self.symbols[token][-1])
+            try:
+                self.push(self.symbols[token][-1])
+            except IndexError as hell:
+                print(token, self.symbols)
+                raise hell
 
     def declare(self):
         sym = self.pop()
@@ -139,7 +208,6 @@ class WL(object):
     def mod(self):
         snd = self.pop()
         fst = self.pop()
-        print('MOD', fst, snd)
         self.push(fst % snd)
 
     def gt(self):
@@ -172,41 +240,52 @@ class WL(object):
         comment = False
         tokens = []
         for wordlet in wordlets:
-            if wordlet == '*/':
-                comment = False
-                continue
-            if wordlet == '/*':
-                comment = True
-                continue
-            if comment:
-                continue
-            if wordlet == '{':
-                tokbuf.append(wordlet)
-                if curlycount == 0:
-                    tokbuf.append('begin')
-                curlycount += 1
-                continue
-            if wordlet == '}':
-                curlycount -= 1
-                if curlycount == 0:
-                    tokbuf.append('end')
+            try:
+                if wordlet == self.dispatchdi[u'*/']:
+                    comment = False
+                    continue
+                if wordlet == self.dispatchdi[u'/*']:
+                    comment = True
+                    continue
+                if comment:
+                    continue
+                if wordlet == self.dispatchdi[u'{']:
                     tokbuf.append(wordlet)
-                    tokens.append(' '.join(tokbuf))
-                    tokbuf = []
-                else:
+                    if curlycount == 0:
+                        tokbuf.append(u'begin')
+                    curlycount += 1
+                    continue
+                if wordlet == self.dispatchdi[u'}']:
+                    curlycount -= 1
+                    if curlycount == 0:
+                        tokbuf.append(u'end')
+                        tokbuf.append(wordlet)
+                        tokens.append(u' '.join(tokbuf))
+                        tokbuf = []
+                    else:
+                        tokbuf.append(wordlet)
+                    continue
+                if curlycount:
                     tokbuf.append(wordlet)
-                continue
-            if curlycount:
-                tokbuf.append(wordlet)
-                continue
-            tokens.append(wordlet)
+                    continue
+                tokens.append(wordlet)
+            except UnicodeWarning as hell:
+                print(repr(wordlet))
+                raise hell
         return tokens
 
     def eval(self, block):
         for token in self.tokenize(block):
             self.read(token)
 
-sampcode = """
+    def import_(self):
+        module = self.pop()
+        if not os.path.exists(module):
+            module += u'.wl'
+        with codecs.getreader('utf-8')(open(module)) as modfile:
+            self.eval(modfile.read())
+
+sampcode = u"""
 'slithy' declare
 { /* FIB */
   'k' declare
@@ -399,14 +478,22 @@ jabberwock muchness call 260 == if
 """
 
 def main():
-    wl = WL()
+    sys.stdout = codecs.getwriter(u'utf-8')(sys.stdout)
+    sys.stdin = codecs.getreader(u'utf-8')(sys.stdin)
     #print('\n'.join(wl.tokenize(sampcode)))
-    wl.eval(sampcode)
-    #wl.eval(sys.stdin.read())
-    for st in wl.stack:
-        print(''.join([ chr(96 + c) for c in st ]), end=' ')
-    print()
-    print('JABBERWOCK', wl.symbols['jabberwock'])
+    if u'--demo' in sys.argv:
+        wl = WL(flavour=u'english')
+        wl.eval(sampcode)
+    else:
+        flavour = u'callooh'
+        if u'--english' in sys.argv:
+            flavour = u'english'
+        wl = WL(flavour=flavour)
+        wl.eval(sys.stdin.read())
+    if u'--answer' in sys.argv or u'--demo' in sys.argv:
+        for st in wl.stack:
+            print(u''.join([ chr(96 + c) for c in st ]), end=u' ')
+        print()
     return 0
 
 if __name__ == '__main__':
